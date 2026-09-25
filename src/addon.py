@@ -12,7 +12,7 @@ import bpy
 import decimal
 import mathutils
 
-print_debug_messages = True
+print_debug_messages = False
 print_debug_messages_get_minmax_xyz_in_coords = False
 
 
