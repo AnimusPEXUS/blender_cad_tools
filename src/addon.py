@@ -10,11 +10,15 @@ bl_info = {
 
 import bpy
 import decimal
+import mathutils
+
+print_debug_messages = True
+print_debug_messages_get_minmax_xyz_in_coords = False
 
 
 class WRO_PAS_A_calc_all(bpy.types.Operator):
     bl_idname = "wro_pas_a.calc_all"
-    bl_label = "Perform Search"
+    bl_label = "Calculate"
     # bl_description = "no descr"
 
     def execute(self, context):
@@ -170,69 +174,146 @@ def objects_list(inside_of=None):
     return bpy.data.objects
 
 
-def objects_list_in_selected_parallelepiped():
-    obj = bpy.context.active_object
-
-    obj_box = calc_obj_box(obj)
+# def objects_list_in_selected_parallelepiped():
+#    obj = bpy.context.active_object
+#
+#    obj_box = calc_obj_box(obj)
 
 
 def calc_obj_box(obj):
-    min_x = get_minmax_xyz(obj, 'min', 'x', 'value')
-    min_y = get_minmax_xyz(obj, 'min', 'y', 'value')
-    min_z = get_minmax_xyz(obj, 'min', 'z', 'value')
-    max_x = get_minmax_xyz(obj, 'max', 'x', 'value')
-    max_y = get_minmax_xyz(obj, 'max', 'y', 'value')
-    max_z = get_minmax_xyz(obj, 'max', 'z', 'value')
 
-    return [min_x, min_y, min_z, max_x, max_y, max_z]
+    obj_coords = object_coords(obj)
+    obj_coords = coords_list_matrix_convert(obj_coords, obj.matrix_world)
+
+    min_x = get_minmax_xyz(obj_coords, 'min', 'x', 'value')
+    min_y = get_minmax_xyz(obj_coords, 'min', 'y', 'value')
+    min_z = get_minmax_xyz(obj_coords, 'min', 'z', 'value')
+    max_x = get_minmax_xyz(obj_coords, 'max', 'x', 'value')
+    max_y = get_minmax_xyz(obj_coords, 'max', 'y', 'value')
+    max_z = get_minmax_xyz(obj_coords, 'max', 'z', 'value')
+
+    ret = [min_x, min_y, min_z, max_x, max_y, max_z]
+    if print_debug_messages:
+        print("calc_obj_box(", obj, ") result:", ret)
+
+    return ret
+
+
+def couple_minmax(v1, v2):
+    if (v1 > v2):
+        return v2, v1
+    else:
+        return v1, v2
+
+
+def calc_obj_box_minmaxes(obj_box):
+    obj2_box_x_min, obj2_box_x_max = couple_minmax(obj_box[0], obj_box[3])
+    obj2_box_y_min, obj2_box_y_max = couple_minmax(obj_box[1], obj_box[4])
+    obj2_box_z_min, obj2_box_z_max = couple_minmax(obj_box[2], obj_box[5])
+
+    return [obj2_box_x_min, obj2_box_x_max,
+            obj2_box_y_min, obj2_box_y_max,
+            obj2_box_z_min, obj2_box_z_max]
+
+
+def obj_global_vertices(obj):
+    ret = list(obj.data.vertices)
+    for i in range(len(ret)):
+        ret[i] = obj.matrix_world @ ret[i]
+    return ret
 
 
 def is_obj1_in_box_of_obj2(
         obj1,
         obj2,
         allow_partial=False,
-        precalculated_box=None
+        precalculated_box=None,
+        precalculated_box_minmaxes=None,
+        precalculated_obj1_global_coordinates=None
 ):
+    is_in = 0
+
+    if not precalculated_obj1_global_coordinates:
+        precalculated_obj1_global_coordinates = coords_list_matrix_convert(
+            object_coords(obj1),
+            obj1.matrix_world
+        )
+
     if precalculated_box:
         obj2_box = precalculated_box
     else:
         obj2_box = calc_obj_box(obj2)
 
-    is_in = 0
+    if precalculated_box_minmaxes:
+        obj2_box_x_min, obj2_box_x_max, \
+            obj2_box_y_min, obj2_box_y_max, \
+            obj2_box_z_min, obj2_box_z_max = \
+            precalculated_box_minmaxes
+    else:
+        obj2_box_x_min, obj2_box_x_max, \
+            obj2_box_y_min, obj2_box_y_max, \
+            obj2_box_z_min, obj2_box_z_max = \
+            calc_obj_box_minmaxes(obj2_box)
 
-    for i in obj1.data.vertices:
-        i_co = i.co
+    if print_debug_messages:
+        print('obj2_box:', obj2_box)
+        print('obj2_box_minmaxes:',
+              obj2_box_x_min, obj2_box_x_max,
+              obj2_box_y_min, obj2_box_y_max,
+              obj2_box_z_min, obj2_box_z_max)
+
+    for i in precalculated_obj1_global_coordinates:
 
         if (
-            (i_co.x >= obj2_box[0] and i_co.x < obj2_box[3]) and
-            (i_co.y >= obj2_box[1] and i_co.y < obj2_box[4]) and
-            (i_co.z >= obj2_box[2] and i_co.z < obj2_box[5])
+            (i.x >= obj2_box_x_min and i.x < obj2_box_x_max) and
+            (i.y >= obj2_box_y_min and i.y < obj2_box_y_max) and
+            (i.z >= obj2_box_z_min and i.z < obj2_box_z_max)
         ):
+            if print_debug_messages:
+                print('vector', i, 'is in box of', obj2)
             is_in += 1
 
     if is_in == 0:
+        if print_debug_messages:
+            print("obj", obj1, ' not in ', obj2)
         return False
 
     if is_in == len(obj1.data.vertices):
+        if print_debug_messages:
+            print("obj", obj1, ' in ', obj2)
         return True
 
+    if print_debug_messages:
+        print("obj", obj1, ' partially in ', obj2)
     return allow_partial
 
 
-def get_minmax_xyz(obj, what, where, ret_type='value'):
+def object_coords(obj):
+    ret = list(obj.data.vertices)
+    for i in range(len(ret)):
+        ret[i] = ret[i].co
+    return ret
+
+
+def coords_list_matrix_convert(coord_list, matrix):
+    ret = list()
+    for i in coord_list:
+        ret.append(matrix @ i)
+    return ret
+
+
+def get_minmax_xyz(coords, what, where, ret_type='value'):
     '''
     You pass object and this function searches
     it's points for min or max X, Y or Z and returns
-    exact value or list of vertexes.
+    exact value or list of coordinates.
 
-    obj can be:
-      *. bpy.types.Object
-      *. a list of bpy.types.MeshVertex
+    coords must be list of mathutils.Vector
 
     throws exception in case of unrecovarable error.
 
-    returns 
-       if nothing found (obj has no points): 
+    returns
+       if nothing found (obj has no points):
        * None if 'value' requested for a result;
        * empty list, if 'vertex', 'vector' or 'same' is requested.
        else:
@@ -255,46 +336,60 @@ def get_minmax_xyz(obj, what, where, ret_type='value'):
     if ret_type not in ['value', 'list']:
         raise Exception("invalid `ret_type'")
 
-    t = type(obj)
+    coords_type = type(coords)
 
-    if t == bpy.types.Object:
-        obj = list(obj.data.vertices)
+    if print_debug_messages:
+        print(
+            "get_minmax_xyz(",
+            coords, ", ",
+            what,		", ",
+            where, ", ", ret_type, ")"
+        )
 
-    elif t == list:
-        for i in obj:
-            t = type(i)
-            if t != bpy.types.MeshVertex:
+    if coords_type == list:
+        for i in coords:
+            coords_type_i = type(i)
+            if coords_type_i != mathutils.Vector:
                 raise Exception(
-                    "unexpected value type in `obj' list: {}".format(t)
+                    "unexpected value type in `coords' list: {}".format(
+                        coords_type_i)
                 )
     else:
-        raise Exception("unsupported `obj' type: {}".format(t))
+        raise Exception("unsupported `obj' type: {}".format(coords_type))
 
-    if len(obj) == 0:
+    if len(coords) == 0:
         if ret_type == 'value':
             return None
         elif ret_type == 'list':
             return list()
 
-    val = getattr(obj[0].co, where)
+    if print_debug_messages_get_minmax_xyz_in_coords:
+        print("coords:")
+        for i in range(len(coords)):
+            print("   ", i, coords[i].xyz)
 
-    for i in obj[1:]:
-        x = getattr(i.co, where)
-        if (what == 'min' and x < val) or (what == 'max' and x > val):
-            val = x
+    val = getattr(coords[0], where)
+
+    for i in coords[1:]:
+        where_val = getattr(i, where)
+
+        if ((what == 'min' and where_val < val) or
+                (what == 'max' and where_val > val)):
+            val = where_val
 
     if ret_type == 'value':
         return val
     elif ret_type == 'list':
         ret = []
-        for i in obj:
-            if getattr(i.co, where) == val:
+
+        for i in coords:
+            if getattr(i, where) == val:
                 ret.append(i)
         return ret
     else:
-        Exception("unexpected error")
+        raise Exception("unexpected error")
 
-    return None
+    raise Exception("unexpected error")
 
 
 def is_object_in_topic(topic, obj):
@@ -302,36 +397,39 @@ def is_object_in_topic(topic, obj):
 
 
 def get_objects(
-    names,
+    topics,
     among_selected=False,
     whithin_obj_box=None,
     allow_partial=False
+
+
 ):
     objs = []
 
     objs2 = []
-    if not among_selected:
-        objs2 = bpy.data.objects
+    if among_selected:
+        objs2 = list(bpy.context.selected_objects)
     else:
-        objs2 = bpy.context.selected_objects
+        objs2 = list(bpy.data.objects)
 
     precalculated_box = None
+    precalculated_box_minmaxes = None
     if whithin_obj_box:
         precalculated_box = calc_obj_box(whithin_obj_box)
+        precalculated_box_minmaxes = calc_obj_box_minmaxes(precalculated_box)
 
-    for i in names:
-        # i_dot = i+'.'
+    for i in topics:
         for j in objs2:
             if is_object_in_topic(i, j):
-                if (
-                    whithin_obj_box is None or
-                    is_obj1_in_box_of_obj2(
-                        j,
-                        whithin_obj_box,
-                        allow_partial=allow_partial,
-                        precalculated_box=precalculated_box
-                    )
-                ):
+                if (not whithin_obj_box or
+                        is_obj1_in_box_of_obj2(
+                            j,
+                            whithin_obj_box,
+                            allow_partial=allow_partial,
+                            precalculated_box=precalculated_box,
+                            precalculated_box_minmaxes=precalculated_box_minmaxes
+                            # precalculated_obj1_global_coordinates not needed here
+                        )):
                     objs.append(j)
 
     return objs
@@ -339,30 +437,30 @@ def get_objects(
 
 def calc_vertex_distance(v1, v2):
     for i in [v1, v2]:
-        if type(i) != bpy.types.MeshVertex:
-            raise Exception("parameters must be of type bpy.types.MeshVertex")
+        if type(i) != mathutils.Vector:
+            raise Exception("parameters must be of type mathutils.Vector")
 
-    x1 = decimal.Decimal(v1.co.x)
-    x2 = decimal.Decimal(v2.co.x)
-    y1 = decimal.Decimal(v1.co.y)
-    y2 = decimal.Decimal(v2.co.y)
-    z1 = decimal.Decimal(v1.co.z)
-    z2 = decimal.Decimal(v2.co.z)
+    x1 = decimal.Decimal(v1.x)
+    x2 = decimal.Decimal(v2.x)
+    y1 = decimal.Decimal(v1.y)
+    y2 = decimal.Decimal(v2.y)
+    z1 = decimal.Decimal(v1.z)
+    z2 = decimal.Decimal(v2.z)
 
     if x1 > x2:
-        z = x1
+        t = x1
         x1 = x2
-        x2 = z
+        x2 = t
 
     if y1 > y2:
-        z = y1
+        t = y1
         y1 = y2
-        y2 = z
+        y2 = t
 
     if z1 > z2:
-        z = z1
+        t = z1
         z1 = z2
-        z2 = z
+        z2 = t
 
     x_diff = x2-x1
     y_diff = y2-y1
@@ -378,27 +476,41 @@ def calc_vertex_distance(v1, v2):
     return diff
 
 
+def calc_obj_length(obj):
+
+    obj_coords = object_coords(obj)
+    obj_coords = coords_list_matrix_convert(obj_coords, obj.matrix_world)
+
+    longest = decimal.Decimal(0)
+
+    for ed in obj.data.edges:
+        dist = calc_vertex_distance(
+            obj_coords[ed.vertices[0]],
+            obj_coords[ed.vertices[1]]
+        )
+        if dist > longest:
+            longest = dist
+    return longest
+
+
 def calc_pices(objs, topics):
     ret = {}
 
     for topic in topics:
         total_length = decimal.Decimal(0)
         lengths_reg = {}
+
         for obj in objs:
             if is_object_in_topic(topic, obj):
-                longest = decimal.Decimal(0)
-                for ed in obj.data.edges:
-                    dist = calc_vertex_distance(
-                        obj.data.vertices[ed.vertices[0]],
-                        obj.data.vertices[ed.vertices[1]]
-                    )
-                    if dist > longest:
-                        longest = dist
 
-                total_length += longest
-                if longest not in lengths_reg:
-                    lengths_reg[longest] = decimal.Decimal(0)
-                lengths_reg[longest] += decimal.Decimal(1)
+                obj_length = calc_obj_length(obj)
+
+                total_length += obj_length
+
+                if obj_length not in lengths_reg:
+                    lengths_reg[obj_length] = decimal.Decimal(0)
+
+                lengths_reg[obj_length] += decimal.Decimal(1)
 
         ret[topic] = {
             'total_length': total_length,
@@ -409,6 +521,9 @@ def calc_pices(objs, topics):
 
 
 def calc_pices_res_repr(data):
+
+    if print_debug_messages:
+        print('data:', data)
 
     ret = ""
 
