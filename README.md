@@ -1,6 +1,8 @@
 # About
 This is Add-on for Blender, to help calculate building materials needed for simple constructions.
 
+(maybe later more add-ons /and/or functionality will be added)
+
 # Installation
 Simply download .py file and add it as Add-on to blender.
 
