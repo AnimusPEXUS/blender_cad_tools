@@ -315,16 +315,16 @@ def get_minmax_xyz(coords, what, where, ret_type='value'):
     returns
        if nothing found (obj has no points):
        * None if 'value' requested for a result;
-       * empty list, if 'vertex', 'vector' or 'same' is requested.
+       * empty list, if 'list' is requested.
        else:
        * exact numeric value returned
-       * list with all vertixes or vectors
+       * list with matched mathutils.Vector s
 
     what: 'min' or 'max'
     where: 'x', 'y' or 'z'
     ret_type: 'value' or 'list'.
        if 'value' selected - exact value is returned.
-       if 'list' selected - returned list of conforming bpy.types.MeshVertex es
+       if 'list' selected - returned list of conforming mathutils.Vector s
     '''
 
     if what not in ['min', 'max']:
